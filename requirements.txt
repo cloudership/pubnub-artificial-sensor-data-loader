@@ -1,0 +1,2 @@
+-r requirements-live.txt
+pytest>=7.1.2,<7.2
