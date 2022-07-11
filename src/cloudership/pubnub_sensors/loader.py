@@ -2,6 +2,7 @@ import logging
 import sys
 from uuid import uuid4
 
+import boto3
 from pubnub.callbacks import SubscribeCallback
 from pubnub.enums import PNStatusCategory
 from pubnub.pnconfiguration import PNConfiguration
@@ -9,19 +10,26 @@ from pubnub.pubnub import PubNub
 
 
 class Loader:
-    def __init__(self, subscribe_key, publish_key, channel, client_uuid=None):
-        self.uuid = client_uuid or uuid4()
-        self.publish_key = publish_key
+    def __init__(self, subscribe_key, channel, client_uuid,
+                 write_bucket, write_path):
         self.subscribe_key = subscribe_key
         self.channel = channel
+        self.uuid = client_uuid
+
+        self._write_path = write_path
+        self._write_bucket = write_bucket
+
+        self._s3 = boto3.client('s3')
+        assert self._s3.list_objects_v2(Bucket=self._write_bucket, MaxKeys=1)
 
         pnconfig = PNConfiguration()
         pnconfig.subscribe_key = self.subscribe_key
-        pnconfig.publish_key = self.publish_key
         pnconfig.uuid = str(self.uuid)
 
         self._pubnub = PubNub(pnconfig)
-        self._pubnub.add_listener(_PubNubSubscribeCallback())
+        subscribe_callback = _PubNubSubscribeCallback(write_bucket=self._write_bucket,
+                                                      write_path=self._write_path)
+        self._pubnub.add_listener(subscribe_callback)
         self._pubnub_subscribe_builder = self._pubnub.subscribe().channels(self.channel)
 
     def start(self):
@@ -29,6 +37,11 @@ class Loader:
 
 
 class _PubNubSubscribeCallback(SubscribeCallback):
+    def __init__(self, write_bucket, write_path):
+        self._write_bucket = write_bucket
+        self._write_path = write_path
+        super().__init__()
+
     def presence(self, _pubnub, presence):
         pass
 
@@ -47,4 +60,5 @@ class _PubNubSubscribeCallback(SubscribeCallback):
             sys.exit("FATAL")
 
     def message(self, _pubnub, message):
-        print(message.message)
+        absolute_filename = f"/{self._write_path}/{message.timetoken}.json"
+        print(f"{message.message} => s3://{self._write_bucket}{absolute_filename}")
