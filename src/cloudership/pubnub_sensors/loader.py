@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from uuid import uuid4
@@ -27,7 +28,8 @@ class Loader:
         pnconfig.uuid = str(self.uuid)
 
         self._pubnub = PubNub(pnconfig)
-        subscribe_callback = _PubNubSubscribeCallback(write_bucket=self._write_bucket,
+        subscribe_callback = _PubNubSubscribeCallback(s3_client=self._s3,
+                                                      write_bucket=self._write_bucket,
                                                       write_path=self._write_path)
         self._pubnub.add_listener(subscribe_callback)
         self._pubnub_subscribe_builder = self._pubnub.subscribe().channels(self.channel)
@@ -37,9 +39,10 @@ class Loader:
 
 
 class _PubNubSubscribeCallback(SubscribeCallback):
-    def __init__(self, write_bucket, write_path):
+    def __init__(self, s3_client, write_bucket, write_path):
         self._write_bucket = write_bucket
         self._write_path = write_path
+        self._s3 = s3_client
         super().__init__()
 
     def presence(self, _pubnub, presence):
@@ -60,5 +63,11 @@ class _PubNubSubscribeCallback(SubscribeCallback):
             sys.exit("FATAL")
 
     def message(self, _pubnub, message):
-        absolute_filename = f"/{self._write_path}/{message.timetoken}.json"
-        print(f"{message.message} => s3://{self._write_bucket}{absolute_filename}")
+        object_key = f"{self._write_path}/{message.timetoken}.json"
+        logging.info({'event': 'MESSAGE',
+                       'message': message.message,
+                       'time': message.timetoken})
+        self._s3.put_object(
+            Bucket=self._write_bucket,
+            Key=object_key,
+            Body=json.dumps(message.message))
