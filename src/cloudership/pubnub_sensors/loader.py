@@ -1,7 +1,6 @@
 import json
 import logging
 import sys
-from uuid import uuid4
 
 import boto3
 from pubnub.callbacks import SubscribeCallback
